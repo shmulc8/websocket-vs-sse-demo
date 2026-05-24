@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ws vs sse</title>
+    <style>
+      :root {
+        --bg-0: #07080f;
+        --bg-1: #0d1120;
+        --bg-2: #141a2e;
+        --border: rgba(255, 255, 255, 0.08);
+        --border-strong: rgba(255, 255, 255, 0.14);
+        --text: #e6e9f2;
+        --muted: #8b93ad;
+        --ws: #3b82f6;      --ws-glow: #60a5fa;
+        --sse: #22c55e;     --sse-glow: #4ade80;
+        --post: #c084fc;    --post-bg: #a855f7;
+        --llm: #c084fc;
+        --danger: #ef4444;
+        --warn: #eab308;
+      }
+      * { box-sizing: border-box; }
+      html, body { background: var(--bg-0); }
+      body {
+        font-family: -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 2rem 1.25rem 3rem;
+        color: var(--text);
+        background:
+          radial-gradient(1200px 600px at 10% -10%, rgba(59,130,246,.10), transparent 60%),
+          radial-gradient(1000px 600px at 100% 0%, rgba(34,197,94,.08), transparent 60%),
+          radial-gradient(900px 500px at 50% 100%, rgba(168,85,247,.07), transparent 60%),
+          var(--bg-0);
+        min-height: 100vh;
+      }
+      h1 {
+        font-size: 1.7rem; font-weight: 700; margin: 0 0 .35rem;
+        letter-spacing: -0.02em;
+        background: linear-gradient(90deg, #fff, #c7d2fe 50%, #fff);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      .sub { color: var(--muted); margin-bottom: 1rem; font-size: .9rem; line-height: 1.55; }
+      .sub strong.ws  { color: var(--ws-glow); }
+      .sub strong.sse { color: var(--sse-glow); }
+      .sub strong.post{ color: var(--post); }
+      code {
+        background: rgba(255,255,255,0.06); padding: 1px 6px;
+        border-radius: 4px; font-family: "SF Mono", ui-monospace, monospace;
+        font-size: .85em; color: #cbd5e1; border: 1px solid var(--border);
+      }
+
+      /* ---------- Controls row ---------- */
+      .controls {
+        display: flex; gap: .5rem; align-items: center; flex-wrap: wrap;
+        margin-bottom: .75rem; padding: .65rem .75rem;
+        background: linear-gradient(180deg, rgba(239,68,68,.07), rgba(239,68,68,.01));
+        border: 1px solid rgba(239,68,68,.18);
+        border-radius: 10px;
+      }
+      .controls .hint { color: var(--muted); font-size: .8rem; margin-left: .35rem; }
+      .controls button {
+        border: 0; border-radius: 8px; padding: .45rem .85rem;
+        font-size: .85rem; font-weight: 600; color: white;
+        cursor: pointer; transition: transform .08s, filter .15s, box-shadow .15s;
+      }
+      .controls button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+      .controls button.danger { background: linear-gradient(180deg, #f87171, var(--danger)); box-shadow: 0 4px 14px rgba(239,68,68,.3); }
+      .controls button.warn   { background: linear-gradient(180deg, #facc15, var(--warn)); color: #1f1500; box-shadow: 0 4px 14px rgba(234,179,8,.3); }
+
+      /* ---------- Ask LLM hero ---------- */
+      .ask-row {
+        display: flex; gap: .6rem; padding: .8rem;
+        background: linear-gradient(180deg, rgba(168,85,247,.10), rgba(168,85,247,.02));
+        border: 1px solid rgba(168,85,247,.25);
+        border-radius: 12px; margin-bottom: 1.25rem;
+        box-shadow: 0 8px 30px rgba(168,85,247,.08);
+      }
+      .ask-row input {
+        flex: 1; background: rgba(0,0,0,0.3); color: var(--text);
+        border: 1px solid var(--border); padding: .65rem .85rem;
+        border-radius: 8px; font-size: .95rem; outline: none;
+        transition: border-color .15s, box-shadow .15s;
+      }
+      .ask-row input:focus { border-color: rgba(168,85,247,.6); box-shadow: 0 0 0 3px rgba(168,85,247,.18); }
+      .ask-row button {
+        background: linear-gradient(180deg, #a855f7, #7c3aed);
+        color: white; border: 0; border-radius: 8px;
+        padding: .65rem 1.1rem; font-size: .9rem; font-weight: 600;
+        cursor: pointer; transition: transform .08s, filter .15s, box-shadow .15s;
+        box-shadow: 0 4px 14px rgba(124,58,237,.35);
+      }
+      .ask-row button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+      /* ---------- Visualization ---------- */
+      .viz { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem; }
+      .viz-col {
+        position: relative; border-radius: 14px; padding: 1rem;
+        background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+        border: 1px solid var(--border);
+        box-shadow: 0 10px 30px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.04);
+      }
+      .viz-ws  { border-top: 2px solid rgba(59,130,246,.55); }
+      .viz-sse { border-top: 2px solid rgba(34,197,94,.55); }
+      .viz-col h2 {
+        margin: 0 0 .25rem; font-size: .95rem; font-weight: 600;
+        display: flex; align-items: center; gap: .5rem;
+      }
+      .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        display: inline-block; animation: heartbeat 1.8s ease-in-out infinite;
+      }
+      .dot.ws  { background: var(--ws-glow);  box-shadow: 0 0 10px var(--ws-glow); }
+      .dot.sse { background: var(--sse-glow); box-shadow: 0 0 10px var(--sse-glow); }
+      .dot.dead         { background: var(--danger); box-shadow: 0 0 10px var(--danger); animation: none; opacity: .9; }
+      .dot.reconnecting { background: var(--warn);   box-shadow: 0 0 10px var(--warn); animation-duration: 3s; }
+      @keyframes heartbeat {
+        0%, 100% { opacity: .55; transform: scale(.9); }
+        50%      { opacity: 1;   transform: scale(1.15); }
+      }
+      .viz-col .desc { color: var(--muted); font-size: .77rem; margin-bottom: .65rem; min-height: 3.6em; line-height: 1.45; }
+
+      .stage {
+        position: relative; height: 280px;
+        background:
+          radial-gradient(600px 200px at 50% 50%, rgba(255,255,255,.025), transparent 70%),
+          linear-gradient(180deg, #05070f, #0a0d1a);
+        border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+      }
+      .stage::before {
+        content: ""; position: absolute; inset: 0;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+        background-size: 24px 24px; pointer-events: none;
+      }
+      .endpoint {
+        position: absolute; left: 14px; right: 14px; height: 28px;
+        background: linear-gradient(180deg, #1f2740, #131829);
+        color: #cdd3e8; padding: 0 .8rem;
+        border-radius: 8px;
+        font-size: .68rem;
+        font-family: "SF Mono", ui-monospace, monospace;
+        letter-spacing: .08em; text-transform: uppercase;
+        z-index: 3;
+        border: 1px solid var(--border-strong);
+        box-shadow: 0 4px 12px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06);
+        display: flex; align-items: center;
+      }
+      .endpoint.top { top: 12px; }
+      .endpoint.bottom { bottom: 12px; }
+      .endpoint::after {
+        content: ""; position: absolute; left: 12px; right: 12px;
+        top: 50%; height: 1px;
+        background: repeating-linear-gradient(90deg, rgba(255,255,255,.08) 0 2px, transparent 2px 8px);
+        opacity: .6; pointer-events: none;
+      }
+
+      /* persistent pipes (the open connection lives here) */
+      .pipe {
+        position: absolute; top: 38px; bottom: 38px;
+        width: 4px; border-radius: 2px;
+      }
+      .pipe.ws {
+        left: 50%; transform: translateX(-50%);
+        background: linear-gradient(180deg, var(--ws), #1e40af);
+        animation: pulse-ws 2.8s ease-in-out infinite;
+      }
+      .pipe.sse {
+        left: 35%; transform: translateX(-50%);
+        background: linear-gradient(180deg, var(--sse), #14532d);
+        animation: pulse-sse 2.8s ease-in-out infinite;
+      }
+      .pipe.dead { animation: none !important; opacity: .25; filter: grayscale(.6); }
+      @keyframes pulse-ws  { 0%,100% { box-shadow: 0 0 10px rgba(59,130,246,.4),  inset 0 0 6px rgba(255,255,255,.2); } 50% { box-shadow: 0 0 22px rgba(59,130,246,.75), inset 0 0 8px rgba(255,255,255,.35); } }
+      @keyframes pulse-sse { 0%,100% { box-shadow: 0 0 10px rgba(34,197,94,.4),  inset 0 0 6px rgba(255,255,255,.2); } 50% { box-shadow: 0 0 22px rgba(34,197,94,.75), inset 0 0 8px rgba(255,255,255,.35); } }
+
+      .pipe-label {
+        position: absolute; font-size: .62rem;
+        font-family: "SF Mono", ui-monospace, monospace;
+        letter-spacing: .05em; color: var(--muted);
+        z-index: 2; background: rgba(0,0,0,.55);
+        padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border);
+        white-space: nowrap;
+      }
+      .pipe-label.ws  { left: calc(50% + 12px); top: 50%; transform: translateY(-50%); color: #93c5fd; }
+      .pipe-label.sse { left: calc(35% + 12px); top: 50%; transform: translateY(-50%); color: #86efac; }
+
+      /* ephemeral POST pipes — created per-request, removed when done */
+      .post-pipe {
+        position: absolute; top: 38px; bottom: 38px; width: 3px;
+        left: 70%; transform: translateX(-50%);
+        background-image: linear-gradient(var(--post-bg) 50%, transparent 50%);
+        background-size: 3px 8px;
+        opacity: 0; animation: post-fade 1s ease-out forwards;
+        box-shadow: 0 0 12px rgba(168,85,247,.6); border-radius: 2px;
+      }
+      .post-pipe .label {
+        position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+        font-size: .58rem; color: #e9d5ff;
+        font-family: "SF Mono", ui-monospace, monospace; letter-spacing: .05em;
+        background: rgba(76,29,149,.55);
+        padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(168,85,247,.4);
+        white-space: nowrap;
+      }
+      @keyframes post-fade {
+        0%   { opacity: 0; transform: translateX(-50%) scaleY(.6); }
+        12%  { opacity: 1; transform: translateX(-50%) scaleY(1); }
+        75%  { opacity: 1; }
+        100% { opacity: 0; }
+      }
+
+      /* packets */
+      .packet {
+        position: absolute; width: 14px; height: 14px;
+        border-radius: 50%; margin-left: -7px;
+        z-index: 2; pointer-events: none;
+      }
+      .packet::after {
+        content: ""; position: absolute; inset: -6px;
+        border-radius: 50%; filter: blur(6px); opacity: .8;
+      }
+      .packet.ws  { left: 50%; background: radial-gradient(circle at 35% 35%, #dbeafe, var(--ws)); }
+      .packet.ws::after  { background: var(--ws-glow); }
+      .packet.sse { left: 35%; background: radial-gradient(circle at 35% 35%, #dcfce7, var(--sse)); }
+      .packet.sse::after { background: var(--sse-glow); }
+      .packet.post{ left: 70%; background: radial-gradient(circle at 35% 35%, #f3e8ff, var(--post-bg)); }
+      .packet.post::after{ background: var(--post); }
+
+      .packet.down { animation: travel-down .65s cubic-bezier(.4,.05,.6,1) forwards; }
+      .packet.up   { animation: travel-up   .65s cubic-bezier(.4,.05,.6,1) forwards; }
+      @keyframes travel-down { from { top: 36px; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } to { top: calc(100% - 48px); opacity: 0; } }
+      @keyframes travel-up   { from { top: calc(100% - 48px); opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } to { top: 36px; opacity: 0; } }
+
+      .counters {
+        display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .75rem;
+        font-family: "SF Mono", ui-monospace, monospace; font-size: .72rem;
+      }
+      .counter {
+        padding: .3rem .55rem; border-radius: 7px;
+        background: rgba(255,255,255,.025);
+        border: 1px solid var(--border); color: #cbd5e1;
+        font-variant-numeric: tabular-nums;
+        display: inline-flex; align-items: center; gap: .35rem;
+      }
+      .counter span { color: #fff; font-weight: 600; }
+      .counter.ws  { border-left: 2px solid var(--ws); }
+      .counter.sse { border-left: 2px solid var(--sse); }
+      .counter.post{ border-left: 2px solid var(--post); }
+
+      /* ---------- Chat panels ---------- */
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+      .panel {
+        border-radius: 14px; padding: 1rem 1rem 1.1rem;
+        background: linear-gradient(180deg, var(--bg-2), var(--bg-1));
+        border: 1px solid var(--border);
+        box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+      }
+      .ws-p  { border-top: 2px solid rgba(59,130,246,.55); }
+      .sse-p { border-top: 2px solid rgba(34,197,94,.55); }
+      .panel h2 { margin: 0 0 .15rem; font-size: 1rem; font-weight: 600; display: flex; align-items: center; gap: .5rem; }
+      .panel .desc { color: var(--muted); font-size: .8rem; margin-bottom: .6rem; }
+      .log {
+        height: 240px; overflow-y: auto;
+        border: 1px solid var(--border); padding: .6rem;
+        border-radius: 8px; background: rgba(0,0,0,0.25); font-size: .85rem;
+      }
+      .log::-webkit-scrollbar { width: 8px; }
+      .log::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); border-radius: 4px; }
+      .row { display: flex; gap: .5rem; margin-top: .6rem; }
+      .row input {
+        background: rgba(0,0,0,.3); color: var(--text);
+        border: 1px solid var(--border); border-radius: 8px;
+        padding: .5rem .7rem; font-size: .9rem; outline: none;
+      }
+      .row .name { width: 7rem; }
+      .row .text { flex: 1; }
+      .row button {
+        border: 0; border-radius: 8px; padding: .5rem 1rem;
+        font-size: .85rem; font-weight: 600; color: white; cursor: pointer;
+        transition: transform .08s, filter .15s;
+      }
+      .row button:hover { filter: brightness(1.1); transform: translateY(-1px); }
+      .ws-p  .row button { background: linear-gradient(180deg, var(--ws-glow), var(--ws)); box-shadow: 0 4px 14px rgba(59,130,246,.35); }
+      .sse-p .row button { background: linear-gradient(180deg, var(--sse-glow), var(--sse)); box-shadow: 0 4px 14px rgba(34,197,94,.35); }
+
+      .msg { padding: .3rem 0; border-bottom: 1px solid rgba(255,255,255,.04); }
+      .meta { color: var(--muted); font-size: .7em; margin-left: .4rem; }
+      .tag {
+        display: inline-block; font-size: .58rem; font-weight: 700;
+        padding: 2px 6px; border-radius: 4px; vertical-align: middle;
+        margin-right: .35rem; color: white; letter-spacing: .04em;
+      }
+      .tag-ws  { background: linear-gradient(180deg, var(--ws-glow), var(--ws)); }
+      .tag-sse { background: linear-gradient(180deg, var(--sse-glow), var(--sse)); }
+      .tag-llm { background: linear-gradient(180deg, var(--llm), #7c3aed); }
+      .llm-msg {
+        background: linear-gradient(180deg, rgba(168,85,247,.10), rgba(168,85,247,.04));
+        border: 1px solid rgba(168,85,247,.25);
+        padding: .5rem .65rem; border-radius: 8px; margin: .35rem 0;
+        white-space: pre-wrap; word-break: break-word;
+        font-size: .85rem; line-height: 1.45; color: #efe5ff;
+      }
+      .llm-msg .prompt { color: var(--muted); font-size: .72rem; margin-bottom: .25rem; }
+      .llm-error { color: #fda4af; }
+      .stamp { color: var(--muted); font-size: .65rem; float: right; opacity: .7; }
+
+      .legend {
+        font-size: .82rem; color: var(--muted);
+        margin-top: 1.25rem; line-height: 1.6;
+        background: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0));
+        padding: .9rem 1rem; border-radius: 10px; border: 1px solid var(--border);
+      }
+      .legend strong { color: var(--text); }
+    </style>
+  </head>
+  <body>
+    <h1>WebSocket vs SSE — what's actually on the wire</h1>
+    <div class="sub">
+      Same server, same LLM stream — visualized in real time.
+      <strong class="ws">Blue</strong> = one persistent WS socket.
+      <strong class="sse">Green</strong> = one persistent <code>GET /events</code>.
+      <strong class="post">Purple</strong> = ephemeral <code>POST</code> that opens, fires once, closes.
+    </div>
+
+    <div class="controls">
+      <button id="kill" class="danger">⚡ Kill all server-side connections</button>
+      <button id="reconnect-ws" class="warn">↺ Reconnect WS</button>
+      <span class="hint">Watch SSE auto-reconnect while WS stays dead until you click reconnect — that's application code's job, not the protocol's.</span>
+    </div>
+
+    <div class="ask-row">
+      <input id="prompt" placeholder="ask the LLM — e.g. write a haiku about TCP" />
+      <button id="ask-ws">Ask via WS</button>
+      <button id="ask-http">Ask via POST /ask</button>
+    </div>
+
+    <section class="viz">
+      <!-- WebSocket -->
+      <div class="viz-col viz-ws">
+        <h2><span class="dot ws" id="ws-dot"></span>WebSocket</h2>
+        <div class="desc">One <code>ws://</code> socket. Full duplex — same pipe carries sends and receives.</div>
+        <div class="stage" id="ws-stage">
+          <div class="endpoint top">browser</div>
+          <div class="pipe ws" id="ws-pipe"></div>
+          <div class="pipe-label ws">ws://</div>
+          <div class="endpoint bottom">server</div>
+        </div>
+        <div class="counters">
+          <div class="counter ws">state: <span id="ws-state">…</span></div>
+          <div class="counter ws">↑ <span id="ws-out">0</span> · ↓ <span id="ws-in">0</span></div>
+          <div class="counter ws">Σ <span id="ws-bytes">0 B</span></div>
+        </div>
+      </div>
+
+      <!-- SSE -->
+      <div class="viz-col viz-sse">
+        <h2><span class="dot sse" id="sse-dot"></span>SSE</h2>
+        <div class="desc">One long-lived <code>GET /events</code> stream (server→client). Every client send opens a fresh <code>POST</code> — purple pipe pops in, fires once, fades.</div>
+        <div class="stage" id="sse-stage">
+          <div class="endpoint top">browser</div>
+          <div class="pipe sse" id="sse-pipe"></div>
+          <div class="pipe-label sse">GET /events</div>
+          <div class="endpoint bottom">server</div>
+        </div>
+        <div class="counters">
+          <div class="counter sse">state: <span id="sse-state">…</span></div>
+          <div class="counter sse">↓ <span id="sse-in">0</span></div>
+          <div class="counter sse">Σ stream <span id="sse-bytes">0 B</span></div>
+          <div class="counter post">POSTs <span id="post-out">0</span> · <span id="post-bytes">0 B</span></div>
+        </div>
+      </div>
+
+    </section>
+
+    <div class="grid">
+      <section class="panel ws-p">
+        <h2><span class="dot ws"></span>WebSocket panel</h2>
+        <div class="desc">Sends a chat frame over the open socket.</div>
+        <div class="log" id="ws-log"></div>
+        <div class="row">
+          <input class="name" id="ws-user" value="ws-user" />
+          <input class="text" id="ws-text" placeholder="chat over WebSocket" />
+          <button id="ws-send">send</button>
+        </div>
+      </section>
+
+      <section class="panel sse-p">
+        <h2><span class="dot sse"></span>SSE panel</h2>
+        <div class="desc">Sends a chat via <code>POST /send</code> — a fresh HTTP request per message.</div>
+        <div class="log" id="sse-log"></div>
+        <div class="row">
+          <input class="name" id="sse-user" value="sse-user" />
+          <input class="text" id="sse-text" placeholder="chat via POST /send" />
+          <button id="sse-send">POST</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="legend">
+      <strong>Resilience:</strong> click "Kill all connections" to drop every active socket. SSE silently reconnects on its own; WS stays closed until you click "Reconnect WS" — application code has to do that itself.
+      <strong>Bytes:</strong> tallies are estimates (frame headers + payload bytes for WS/SSE, ~470 B HTTP overhead per POST).
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const wsStage = $("ws-stage"), sseStage = $("sse-stage");
+      const enc = new TextEncoder();
+      const utf8 = (s) => enc.encode(s).length;
+      const fmtBytes = (n) => n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n/1024).toFixed(1)} KB` : `${(n/1024/1024).toFixed(2)} MB`;
+
+      // ---------- counters ----------
+      let wsOut = 0, wsIn = 0, wsBytes = 0;
+      let sseIn = 0, sseBytes = 0;
+      let postOut = 0, postBytes = 0;
+      const POST_REQ_OVERHEAD = 320, POST_RESP_OVERHEAD = 150;
+
+      function setCounters() {
+        $("ws-out").textContent = wsOut;
+        $("ws-in").textContent = wsIn;
+        $("ws-bytes").textContent = fmtBytes(wsBytes);
+        $("sse-in").textContent = sseIn;
+        $("sse-bytes").textContent = fmtBytes(sseBytes);
+        $("post-out").textContent = postOut;
+        $("post-bytes").textContent = fmtBytes(postBytes);
+      }
+
+      // ---------- byte estimators ----------
+      function wsFrameBytes(payload, masked) {
+        const b = utf8(payload);
+        let header = 2;
+        if (b >= 65536) header += 8;
+        else if (b >= 126) header += 2;
+        if (masked) header += 4;
+        return header + b;
+      }
+      const sseEventBytes = (s) => 8 + utf8(s); // "data: " + payload + "\n\n"
+
+      // ---------- animation helpers ----------
+      function spawnPacket(stage, kind, dir) {
+        const el = document.createElement("div");
+        el.className = `packet ${kind} ${dir}`;
+        stage.appendChild(el);
+        el.addEventListener("animationend", () => el.remove(), { once: true });
+      }
+      function spawnPostPipe(stage, labelText) {
+        const pipe = document.createElement("div");
+        pipe.className = "post-pipe";
+        const lbl = document.createElement("div");
+        lbl.className = "label";
+        lbl.textContent = labelText;
+        pipe.appendChild(lbl);
+        stage.appendChild(pipe);
+        pipe.addEventListener("animationend", () => pipe.remove(), { once: true });
+        const pkt = document.createElement("div");
+        pkt.className = "packet post down";
+        stage.appendChild(pkt);
+        pkt.addEventListener("animationend", () => pkt.remove(), { once: true });
+      }
+      // ---------- log rendering ----------
+      const llmEls = { ws: new Map(), sse: new Map() };
+      const escape = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      })[c]);
+      const ts = (at) => at ? `<span class="stamp">${new Date(at).toLocaleTimeString()}</span>` : "";
+
+      function renderInLog(logEl, panelKey, msg) {
+        if (msg.kind === "chat") {
+          const tag = msg.via === "ws" ? `<span class="tag tag-ws">WS</span>` : `<span class="tag tag-sse">SSE</span>`;
+          const el = document.createElement("div");
+          el.className = "msg";
+          el.innerHTML = `${tag}<strong>${escape(msg.user)}</strong>: ${escape(msg.text)}${ts(msg.at)}`;
+          logEl.appendChild(el);
+        } else if (msg.kind === "llm-start") {
+          const el = document.createElement("div");
+          el.className = "llm-msg";
+          el.innerHTML = `<div class="prompt"><span class="tag tag-llm">LLM</span><strong>${escape(msg.model)}</strong> ← ${escape(msg.prompt)}${ts(msg.at)}</div><div class="body"></div>`;
+          logEl.appendChild(el);
+          llmEls[panelKey].set(msg.id, el.querySelector(".body"));
+        } else if (msg.kind === "llm-chunk") {
+          const body = llmEls[panelKey].get(msg.id);
+          if (body) body.textContent += msg.delta;
+        } else if (msg.kind === "llm-end") {
+          llmEls[panelKey].delete(msg.id);
+        } else if (msg.kind === "llm-error") {
+          const body = llmEls[panelKey].get(msg.id);
+          const html = `<div class="llm-error">[error] ${escape(msg.error)}</div>`;
+          if (body) body.parentElement.insertAdjacentHTML("beforeend", html);
+          else logEl.insertAdjacentHTML("beforeend", `<div class="llm-msg llm-error">${escape(msg.error)}</div>`);
+          llmEls[panelKey].delete(msg.id);
+        }
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function setDotState(dotEl, pipeEl, state) {
+        dotEl.classList.remove("dead", "reconnecting");
+        if (pipeEl) pipeEl.classList.remove("dead");
+        if (state === "dead") {
+          dotEl.classList.add("dead");
+          if (pipeEl) pipeEl.classList.add("dead");
+        } else if (state === "reconnecting") {
+          dotEl.classList.add("reconnecting");
+        }
+      }
+
+      // ---------- WebSocket ----------
+      let ws = null;
+      function connectWs() {
+        ws = new WebSocket(`ws://${location.host}`);
+        ws.onopen = () => { $("ws-state").textContent = "OPEN"; setDotState($("ws-dot"), $("ws-pipe"), "ok"); };
+        ws.onclose = () => { $("ws-state").textContent = "CLOSED"; setDotState($("ws-dot"), $("ws-pipe"), "dead"); };
+        ws.onerror = () => {};
+        ws.onmessage = (e) => {
+          wsIn++; wsBytes += wsFrameBytes(e.data, false); setCounters();
+          spawnPacket(wsStage, "ws", "up");
+          renderInLog($("ws-log"), "ws", JSON.parse(e.data));
+        };
+      }
+      function wsSendRaw(obj) {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+        const s = JSON.stringify(obj);
+        ws.send(s);
+        wsOut++; wsBytes += wsFrameBytes(s, true); setCounters();
+        spawnPacket(wsStage, "ws", "down");
+        return true;
+      }
+      connectWs();
+      $("ws-send").onclick = sendWsChat;
+      $("ws-text").addEventListener("keydown", (e) => { if (e.key === "Enter") sendWsChat(); });
+      function sendWsChat() {
+        const text = $("ws-text").value.trim();
+        if (!text) return;
+        if (wsSendRaw({ user: $("ws-user").value || "anon", text })) $("ws-text").value = "";
+      }
+
+      // ---------- SSE ----------
+      const es = new EventSource("/events");
+      es.onopen  = () => { $("sse-state").textContent = "OPEN"; setDotState($("sse-dot"), $("sse-pipe"), "ok"); };
+      es.onerror = () => { $("sse-state").textContent = "RECONNECTING"; setDotState($("sse-dot"), $("sse-pipe"), "reconnecting"); };
+      es.onmessage = (e) => {
+        sseIn++; sseBytes += sseEventBytes(e.data); setCounters();
+        spawnPacket(sseStage, "sse", "up");
+        renderInLog($("sse-log"), "sse", JSON.parse(e.data));
+      };
+      async function httpPost(path, body, label) {
+        spawnPostPipe(sseStage, label);
+        const bodyStr = JSON.stringify(body);
+        postOut++; postBytes += POST_REQ_OVERHEAD + utf8(bodyStr) + POST_RESP_OVERHEAD; setCounters();
+        await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: bodyStr,
+        });
+      }
+      $("sse-send").onclick = sendSseChat;
+      $("sse-text").addEventListener("keydown", (e) => { if (e.key === "Enter") sendSseChat(); });
+      async function sendSseChat() {
+        const text = $("sse-text").value.trim();
+        if (!text) return;
+        await httpPost("/send", { user: $("sse-user").value || "anon", text }, "POST /send");
+        $("sse-text").value = "";
+      }
+
+      // ---------- Ask LLM ----------
+      $("ask-ws").onclick = () => {
+        const prompt = $("prompt").value.trim();
+        if (!prompt) return;
+        wsSendRaw({ kind: "ask", prompt });
+      };
+      $("ask-http").onclick = async () => {
+        const prompt = $("prompt").value.trim();
+        if (!prompt) return;
+        await httpPost("/ask", { prompt }, "POST /ask");
+      };
+      $("prompt").addEventListener("keydown", (e) => { if (e.key === "Enter") $("ask-ws").click(); });
+
+      // ---------- Kill / Reconnect ----------
+      $("kill").onclick = async () => {
+        await fetch("/kill", { method: "POST" });
+      };
+      $("reconnect-ws").onclick = () => {
+        if (ws && ws.readyState !== WebSocket.CLOSED) try { ws.close(); } catch {}
+        connectWs();
+      };
+
+      setCounters();
+    </script>
+  </body>
+</html>
