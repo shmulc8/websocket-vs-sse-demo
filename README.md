@@ -2,7 +2,7 @@
 
 Small TypeScript app that runs both transports against the same server and animates every network event so the difference between them is visible in real time.
 
-🌐 **Live demo:** <https://your-app-name.fly.dev> — LLM asks are rate-limited to 4 per visitor per 24h to share the upstream free quota.
+🌐 **Live demo:** <https://your-app-name.fly.dev> — runs on Fly.io, streams from [Groq's](https://groq.com) `llama-3.1-8b-instant`, capped at 40 LLM asks per visitor IP per 24h.
 
 [![demo screenshot](docs/screenshot.png)](recordings/ws-vs-sse-demo.mp4)
 
@@ -52,7 +52,15 @@ ollama pull gemma4:e2b   # or any model you prefer
 npm start
 ```
 
-**OpenRouter (or any hosted OpenAI-compatible API)**
+**Groq** (what the live demo uses — fast LPU inference, generous free tier)
+```bash
+LLM_BASE_URL='https://api.groq.com/openai/v1' \
+LLM_API_KEY='gsk_…' \
+LLM_MODEL='llama-3.1-8b-instant' \
+npm start
+```
+
+**OpenRouter / GitHub Models / any hosted OpenAI-compatible API**
 ```bash
 LLM_BASE_URL='https://openrouter.ai/api/v1' \
 LLM_API_KEY='sk-or-…' \
@@ -89,13 +97,13 @@ This repo deploys to a free Fly.io shared-256MB VM. After installing `flyctl` an
 ```bash
 fly apps create your-app-name
 fly secrets set \
-  LLM_API_KEY="$(gh auth token)" \
-  LLM_BASE_URL='https://models.github.ai/inference' \
-  LLM_MODEL='openai/gpt-4o-mini'
+  LLM_API_KEY='gsk_…' \
+  LLM_BASE_URL='https://api.groq.com/openai/v1' \
+  LLM_MODEL='llama-3.1-8b-instant'
 fly deploy --ha=false
 ```
 
-Any OpenAI-compatible chat-completions endpoint works for `LLM_BASE_URL` — GitHub Models, OpenRouter, Groq, a local Ollama via `flycast`, etc.
+Any OpenAI-compatible chat-completions endpoint works for `LLM_BASE_URL` — Groq, OpenRouter, GitHub Models, a local Ollama via `flycast`, etc.
 
 ## Inspired by
 
