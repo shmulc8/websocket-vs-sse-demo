@@ -2,7 +2,9 @@
 
 Small TypeScript app that runs both transports against the same server and animates every network event so the difference between them is visible in real time.
 
-![demo](recordings/ws-vs-sse-demo.mp4)
+[![demo screenshot](docs/screenshot.png)](recordings/ws-vs-sse-demo.mp4)
+
+▶ **[Watch the 44-second demo recording](recordings/ws-vs-sse-demo.mp4)** — chat over both transports, LLM streaming fanned out to both, kill all connections, watch SSE auto-reconnect and WS need a manual reconnect.
 
 ## What it shows
 
