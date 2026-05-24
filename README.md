@@ -2,7 +2,7 @@
 
 Small TypeScript app that runs both transports against the same server and animates every network event so the difference between them is visible in real time.
 
-🌐 **Live demo:** <https://your-app-name.fly.dev>
+🌐 **Live demo:** <https://your-app-name.fly.dev> — LLM asks are rate-limited to 4 per visitor per 24h to share the upstream free quota.
 
 [![demo screenshot](docs/screenshot.png)](recordings/ws-vs-sse-demo.mp4)
 
@@ -42,6 +42,7 @@ The server reads three env vars:
 | `LLM_BASE_URL` | `http://localhost:11434/v1` (Ollama) |
 | `LLM_MODEL`    | `gemma4:e2b` |
 | `LLM_API_KEY`  | _empty_ — set when the endpoint requires auth |
+| `VISITOR_ASK_LIMIT` | `4` — LLM asks per visitor IP per 24h |
 
 The endpoint must be OpenAI-compatible (`POST /chat/completions` with `stream: true`). Two common setups:
 

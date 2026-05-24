@@ -1,4 +1,4 @@
-import { createServer, ServerResponse } from "node:http";
+import { createServer, IncomingMessage, ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -10,6 +10,8 @@ const PORT = Number(process.env.PORT) || 3300;
 const LLM_BASE_URL = process.env.LLM_BASE_URL ?? "http://localhost:11434/v1";
 const LLM_API_KEY = process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY ?? "";
 const MODEL = process.env.LLM_MODEL ?? process.env.OPENROUTER_MODEL ?? "gemma4:e2b";
+const VISITOR_ASK_LIMIT = Number(process.env.VISITOR_ASK_LIMIT) || 4;
+const VISITOR_ASK_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 type WireMsg =
   | { kind: "chat"; id: string; user: string; text: string; via: "ws" | "sse"; at: string }
@@ -19,6 +21,51 @@ type WireMsg =
   | { kind: "llm-error"; id: string; error: string };
 
 const sseClients = new Set<ServerResponse>();
+const visitorAsks = new Map<string, { count: number; resetAt: number }>();
+
+function getVisitorIp(req: IncomingMessage): string {
+  const xff = req.headers["x-forwarded-for"];
+  if (typeof xff === "string" && xff.length) return xff.split(",")[0].trim();
+  if (Array.isArray(xff) && xff[0]) return String(xff[0]).split(",")[0].trim();
+  const fly = req.headers["fly-client-ip"];
+  if (typeof fly === "string" && fly.length) return fly;
+  return req.socket.remoteAddress ?? "unknown";
+}
+
+function consumeAskQuota(ip: string): { ok: true; remaining: number } | { ok: false; resetIn: number } {
+  const now = Date.now();
+  let entry = visitorAsks.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    entry = { count: 0, resetAt: now + VISITOR_ASK_WINDOW_MS };
+    visitorAsks.set(ip, entry);
+  }
+  if (entry.count >= VISITOR_ASK_LIMIT) {
+    return { ok: false, resetIn: entry.resetAt - now };
+  }
+  entry.count++;
+  return { ok: true, remaining: VISITOR_ASK_LIMIT - entry.count };
+}
+
+function fmtResetIn(ms: number): string {
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+function askOrReject(ip: string, prompt: string) {
+  const q = consumeAskQuota(ip);
+  if (!q.ok) {
+    const id = randomUUID();
+    broadcast({ kind: "llm-start", id, prompt, model: MODEL, at: new Date().toISOString() });
+    broadcast({
+      kind: "llm-error",
+      id,
+      error: `Per-visitor cap of ${VISITOR_ASK_LIMIT} LLM asks reached. Resets in ${fmtResetIn(q.resetIn)}.`,
+    });
+    return;
+  }
+  streamLLM(prompt);
+}
 
 function broadcast(msg: WireMsg) {
   const json = JSON.stringify(msg);
@@ -135,7 +182,7 @@ const http = createServer(async (req, res) => {
         const { prompt } = JSON.parse(body) as { prompt: string };
         res.writeHead(202);
         res.end();
-        streamLLM(prompt);
+        askOrReject(getVisitorIp(req), prompt);
       } catch {
         res.writeHead(400);
         res.end("bad json");
@@ -167,14 +214,15 @@ const http = createServer(async (req, res) => {
 
 const wss = new WebSocketServer({ server: http });
 
-wss.on("connection", (ws) => {
-  console.log("ws client connected");
+wss.on("connection", (ws, req) => {
+  const visitorIp = getVisitorIp(req);
+  console.log("ws client connected from", visitorIp);
   ws.on("error", console.error);
   ws.on("message", (raw) => {
     try {
       const parsed = JSON.parse(raw.toString());
       if (parsed.kind === "ask") {
-        streamLLM(parsed.prompt);
+        askOrReject(visitorIp, parsed.prompt);
         return;
       }
       const { user, text } = parsed as { user: string; text: string };
