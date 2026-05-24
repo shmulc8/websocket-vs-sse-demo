@@ -2,8 +2,6 @@
 
 Small TypeScript app that runs both transports against the same server and animates every network event so the difference between them is visible in real time.
 
-🌐 **Live demo:** <https://your-app-name.fly.dev> — runs on Fly.io, streams from [Groq's](https://groq.com) `llama-3.1-8b-instant`, capped at 40 LLM asks per visitor IP per 24h.
-
 [![demo screenshot](docs/screenshot.png)](recordings/ws-vs-sse-demo.mp4)
 
 ▶ **[Watch the 44-second demo recording](recordings/ws-vs-sse-demo.mp4)** — chat over both transports, LLM streaming fanned out to both, kill all connections, watch SSE auto-reconnect and WS need a manual reconnect.

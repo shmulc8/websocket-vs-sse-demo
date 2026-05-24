@@ -44,6 +44,18 @@
       .sub strong.ws  { color: var(--ws-glow); }
       .sub strong.sse { color: var(--sse-glow); }
       .sub strong.post{ color: var(--post); }
+
+      .banner {
+        padding: .65rem .85rem;
+        background: linear-gradient(180deg, rgba(234,179,8,.10), rgba(234,179,8,.02));
+        border: 1px solid rgba(234,179,8,.25);
+        border-radius: 10px;
+        margin-bottom: .85rem;
+        color: #fef3c7;
+        font-size: .82rem;
+        line-height: 1.45;
+      }
+      .banner strong { color: #fde68a; }
       code {
         background: rgba(255,255,255,0.06); padding: 1px 6px;
         border-radius: 4px; font-family: "SF Mono", ui-monospace, monospace;
@@ -321,6 +333,10 @@
       <strong class="ws">Blue</strong> = one persistent WS socket.
       <strong class="sse">Green</strong> = one persistent <code>GET /events</code>.
       <strong class="post">Purple</strong> = ephemeral <code>POST</code> that opens, fires once, closes.
+    </div>
+
+    <div class="banner">
+      <strong>Shared sandbox.</strong> Everyone connected sees each other's chats and LLM asks — open two tabs to see the broadcast, or expect to see strangers if the link is shared. The kill button only disconnects your own browser.
     </div>
 
     <div class="controls">

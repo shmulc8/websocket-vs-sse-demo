@@ -12,6 +12,13 @@ const LLM_API_KEY = process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY ??
 const MODEL = process.env.LLM_MODEL ?? process.env.OPENROUTER_MODEL ?? "gemma4:e2b";
 const VISITOR_ASK_LIMIT = Number(process.env.VISITOR_ASK_LIMIT) || 4;
 const VISITOR_ASK_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_BODY_BYTES = 64 * 1024;
+const MAX_WS_PAYLOAD = 64 * 1024;
+const MAX_USER_LEN = 40;
+const MAX_TEXT_LEN = 1000;
+const MAX_PROMPT_LEN = 4000;
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",").map((s) => s.trim()).filter(Boolean);
 
 type WireMsg =
   | { kind: "chat"; id: string; user: string; text: string; via: "ws" | "sse"; at: string }
@@ -20,8 +27,43 @@ type WireMsg =
   | { kind: "llm-end"; id: string; at: string }
   | { kind: "llm-error"; id: string; error: string };
 
-const sseClients = new Set<ServerResponse>();
+const sseClients = new Map<ServerResponse, string>();
 const visitorAsks = new Map<string, { count: number; resetAt: number }>();
+
+function originAllowed(req: IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  try {
+    const u = new URL(origin);
+    if (u.host === req.headers.host) return true;
+  } catch {
+    /* malformed origin */
+  }
+  return false;
+}
+
+function readBody(req: IncomingMessage): Promise<string | null> {
+  return new Promise((resolve) => {
+    let body = "";
+    let aborted = false;
+    req.on("data", (chunk: Buffer) => {
+      if (aborted) return;
+      body += chunk;
+      if (body.length > MAX_BODY_BYTES) {
+        aborted = true;
+        body = "";
+        resolve(null);
+      }
+    });
+    req.on("end", () => { if (!aborted) resolve(body); });
+    req.on("error", () => resolve(null));
+  });
+}
+
+function clampStr(v: unknown, max: number): string {
+  return String(v ?? "").slice(0, max);
+}
 
 function getVisitorIp(req: IncomingMessage): string {
   const xff = req.headers["x-forwarded-for"];
@@ -72,7 +114,7 @@ function broadcast(msg: WireMsg) {
   for (const client of wss.clients) {
     if (client.readyState === WebSocket.OPEN) client.send(json);
   }
-  for (const res of sseClients) {
+  for (const res of sseClients.keys()) {
     res.write(`data: ${json}\n\n`);
   }
 }
@@ -145,66 +187,66 @@ const http = createServer(async (req, res) => {
       Connection: "keep-alive",
     });
     res.write(": connected\n\n");
-    sseClients.add(res);
+    sseClients.set(res, getVisitorIp(req));
     req.on("close", () => sseClients.delete(res));
     return;
   }
 
   if (req.method === "POST" && req.url === "/send") {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", () => {
-      try {
-        const { user, text } = JSON.parse(body) as { user: string; text: string };
-        broadcast({
-          kind: "chat",
-          id: randomUUID(),
-          user,
-          text,
-          via: "sse",
-          at: new Date().toISOString(),
-        });
-        res.writeHead(204);
-        res.end();
-      } catch {
-        res.writeHead(400);
-        res.end("bad json");
-      }
-    });
+    if (!originAllowed(req)) { res.writeHead(403); res.end("forbidden origin"); return; }
+    const body = await readBody(req);
+    if (body === null) { res.writeHead(413); res.end("body too large"); return; }
+    try {
+      const raw = JSON.parse(body) as { user?: unknown; text?: unknown };
+      const user = clampStr(raw.user, MAX_USER_LEN);
+      const text = clampStr(raw.text, MAX_TEXT_LEN);
+      if (!text) { res.writeHead(400); res.end("empty text"); return; }
+      broadcast({
+        kind: "chat", id: randomUUID(), user, text, via: "sse",
+        at: new Date().toISOString(),
+      });
+      res.writeHead(204); res.end();
+    } catch {
+      res.writeHead(400); res.end("bad json");
+    }
     return;
   }
 
   if (req.method === "POST" && req.url === "/ask") {
-    let body = "";
-    req.on("data", (chunk) => (body += chunk));
-    req.on("end", () => {
-      try {
-        const { prompt } = JSON.parse(body) as { prompt: string };
-        res.writeHead(202);
-        res.end();
-        askOrReject(getVisitorIp(req), prompt);
-      } catch {
-        res.writeHead(400);
-        res.end("bad json");
-      }
-    });
+    if (!originAllowed(req)) { res.writeHead(403); res.end("forbidden origin"); return; }
+    const body = await readBody(req);
+    if (body === null) { res.writeHead(413); res.end("body too large"); return; }
+    try {
+      const raw = JSON.parse(body) as { prompt?: unknown };
+      const prompt = clampStr(raw.prompt, MAX_PROMPT_LEN);
+      if (!prompt) { res.writeHead(400); res.end("empty prompt"); return; }
+      res.writeHead(202); res.end();
+      askOrReject(getVisitorIp(req), prompt);
+    } catch {
+      res.writeHead(400); res.end("bad json");
+    }
     return;
   }
 
   if (req.method === "POST" && req.url === "/kill") {
-    let killedWs = 0,
-      killedSse = 0;
+    if (!originAllowed(req)) { res.writeHead(403); res.end("forbidden origin"); return; }
+    const callerIp = getVisitorIp(req);
+    let killedWs = 0, killedSse = 0;
     for (const ws of wss.clients) {
-      ws.terminate();
-      killedWs++;
+      if ((ws as WebSocket & { _ip?: string })._ip === callerIp) {
+        ws.terminate();
+        killedWs++;
+      }
     }
-    for (const sseRes of sseClients) {
-      sseRes.end();
-      killedSse++;
+    for (const [sseRes, sseIp] of sseClients) {
+      if (sseIp === callerIp) {
+        sseRes.end();
+        sseClients.delete(sseRes);
+        killedSse++;
+      }
     }
-    sseClients.clear();
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ killedWs, killedSse }));
+    res.end(JSON.stringify({ killedWs, killedSse, scope: "caller" }));
     return;
   }
 
@@ -212,20 +254,23 @@ const http = createServer(async (req, res) => {
   res.end("Not found");
 });
 
-const wss = new WebSocketServer({ server: http });
+const wss = new WebSocketServer({ server: http, maxPayload: MAX_WS_PAYLOAD });
 
 wss.on("connection", (ws, req) => {
   const visitorIp = getVisitorIp(req);
+  (ws as WebSocket & { _ip?: string })._ip = visitorIp;
   console.log("ws client connected from", visitorIp);
   ws.on("error", console.error);
   ws.on("message", (raw) => {
     try {
       const parsed = JSON.parse(raw.toString());
       if (parsed.kind === "ask") {
-        askOrReject(visitorIp, parsed.prompt);
+        askOrReject(visitorIp, clampStr(parsed.prompt, MAX_PROMPT_LEN));
         return;
       }
-      const { user, text } = parsed as { user: string; text: string };
+      const user = clampStr((parsed as { user?: unknown }).user, MAX_USER_LEN);
+      const text = clampStr((parsed as { text?: unknown }).text, MAX_TEXT_LEN);
+      if (!text) return;
       broadcast({
         kind: "chat",
         id: randomUUID(),
