@@ -77,3 +77,11 @@ src/server.ts           # http server + ws upgrade + sse + POST /send + POST /as
 public/index.html       # the visualization (single-file)
 scripts/record.mjs      # Playwright choreography that produces the demo video
 ```
+
+## Inspired by
+
+This demo was inspired by the talk **"Real-Time AI: Streaming Multi-Agent Workflows via WebSockets"** by **Ilan Tentser**, presented at the Prod AI group at TechGym.
+
+## License
+
+[MIT](LICENSE).
