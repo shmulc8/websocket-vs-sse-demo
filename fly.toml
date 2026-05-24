@@ -3,6 +3,9 @@ primary_region = "cdg"
 
 [build]
 
+[env]
+  VISITOR_ASK_LIMIT = "40"
+
 [http_service]
   internal_port = 8080
   force_https = true
