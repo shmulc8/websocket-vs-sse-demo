@@ -506,7 +506,8 @@
       // ---------- WebSocket ----------
       let ws = null;
       function connectWs() {
-        ws = new WebSocket(`ws://${location.host}`);
+        const proto = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${proto}//${location.host}`);
         ws.onopen = () => { $("ws-state").textContent = "OPEN"; setDotState($("ws-dot"), $("ws-pipe"), "ok"); };
         ws.onclose = () => { $("ws-state").textContent = "CLOSED"; setDotState($("ws-dot"), $("ws-pipe"), "dead"); };
         ws.onerror = () => {};

@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const PORT = 3300;
+const PORT = Number(process.env.PORT) || 3300;
 const LLM_BASE_URL = process.env.LLM_BASE_URL ?? "http://localhost:11434/v1";
 const LLM_API_KEY = process.env.LLM_API_KEY ?? process.env.OPENROUTER_API_KEY ?? "";
 const MODEL = process.env.LLM_MODEL ?? process.env.OPENROUTER_MODEL ?? "gemma4:e2b";

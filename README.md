@@ -2,6 +2,8 @@
 
 Small TypeScript app that runs both transports against the same server and animates every network event so the difference between them is visible in real time.
 
+🌐 **Live demo:** <https://your-app-name.fly.dev>
+
 [![demo screenshot](docs/screenshot.png)](recordings/ws-vs-sse-demo.mp4)
 
 ▶ **[Watch the 44-second demo recording](recordings/ws-vs-sse-demo.mp4)** — chat over both transports, LLM streaming fanned out to both, kill all connections, watch SSE auto-reconnect and WS need a manual reconnect.
@@ -76,7 +78,23 @@ ffmpeg -i recordings/ws-vs-sse-demo.webm -c:v libx264 -crf 22 -pix_fmt yuv420p r
 src/server.ts           # http server + ws upgrade + sse + POST /send + POST /ask + POST /kill
 public/index.html       # the visualization (single-file)
 scripts/record.mjs      # Playwright choreography that produces the demo video
+Dockerfile, fly.toml    # production image + Fly.io deploy config
 ```
+
+## Deploy your own
+
+This repo deploys to a free Fly.io shared-256MB VM. After installing `flyctl` and logging in:
+
+```bash
+fly apps create your-app-name
+fly secrets set \
+  LLM_API_KEY="$(gh auth token)" \
+  LLM_BASE_URL='https://models.github.ai/inference' \
+  LLM_MODEL='openai/gpt-4o-mini'
+fly deploy --ha=false
+```
+
+Any OpenAI-compatible chat-completions endpoint works for `LLM_BASE_URL` — GitHub Models, OpenRouter, Groq, a local Ollama via `flycast`, etc.
 
 ## Inspired by
 

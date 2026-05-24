@@ -1,0 +1,10 @@
+node_modules
+dist
+recordings
+docs
+scripts
+.git
+.gitignore
+README.md
+LICENSE
+.DS_Store
